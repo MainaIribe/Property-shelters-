@@ -1,139 +1,62 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  Bell,
-  Building2,
-  CalendarDays,
-  Check,
-  ChevronDown,
-  CircleDollarSign,
-  ClipboardList,
-  CreditCard,
-  Download,
-  FileText,
-  Home,
-  LayoutDashboard,
-  Menu,
-  MessageSquare,
-  MoreHorizontal,
-  Moon,
-  Plus,
-  Search,
-  Settings,
-  ShieldCheck,
-  Sun,
-  Users,
-  Wallet,
-  Wrench,
-  X,
-  Zap,
-} from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Building2, Check, CircleDollarSign, CreditCard, Home, LayoutDashboard, LogOut, Menu, Moon, Plus, Search, ShieldCheck, Sun, Users, Wallet, Wrench, X } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
 
-const nav = [
-  { label: 'Overview', icon: LayoutDashboard },
-  { label: 'Properties', icon: Building2, count: '3' },
-  { label: 'Tenants', icon: Users, count: '24' },
-  { label: 'Payments', icon: CreditCard },
-  { label: 'Expenses', icon: Wallet },
-  { label: 'Maintenance', icon: Wrench, count: '4' },
-  { label: 'Reports', icon: FileText },
-]
+type Property = { id: string; name: string; property_type: string; location: string; address: string; description: string }
+type Unit = { id: string; property_id: string; unit_number: string; unit_type: string; monthly_rent: number; status: string }
+type Tenant = { id: string; full_name: string; phone: string; email: string }
 
-const payments = [
-  { name: 'John Doe', unit: 'Sunrise · 101', amount: 'KSh 20,000', method: 'M-Pesa', date: 'Today, 9:42 AM', status: 'Paid', initials: 'JD', tone: 'blue' },
-  { name: 'Mary Wanjiku', unit: 'Greenview · B04', amount: 'KSh 18,500', method: 'Bank transfer', date: 'Today, 8:10 AM', status: 'Paid', initials: 'MW', tone: 'green' },
-  { name: 'Jane Doe', unit: 'Sunrise · 103', amount: 'KSh 14,000', method: 'M-Pesa', date: 'Yesterday', status: 'Partial', initials: 'JD', tone: 'purple' },
-  { name: 'Peter Mwangi', unit: 'Kasarani · 2A', amount: 'KSh 12,000', method: 'Cash', date: 'Aug 05, 2026', status: 'Paid', initials: 'PM', tone: 'orange' },
-]
-
-const arrears = [
-  { name: 'Jane Doe', unit: 'Sunrise Apartments · 103', due: 'KSh 14,000', days: '12 days overdue', initials: 'JD' },
-  { name: 'Brian Otieno', unit: 'Kasarani Heights · 2C', due: 'KSh 22,000', days: '7 days overdue', initials: 'BO' },
-  { name: 'Amina Hassan', unit: 'Greenview Court · A02', due: 'KSh 9,500', days: '3 days overdue', initials: 'AH' },
-]
-
-const bars = [62, 74, 58, 88, 72, 94, 82, 100, 79, 90, 84, 96]
-
-function formatCurrency(value: string) {
-  return value
-}
-
-function Status({ children, tone = 'success' }: { children: React.ReactNode; tone?: 'success' | 'warning' | 'danger' | 'neutral' }) {
-  return <span className={`status status-${tone}`}><span className="status-dot" />{children}</span>
-}
+const nav = [{ label: 'Overview', icon: LayoutDashboard }, { label: 'Properties', icon: Building2 }, { label: 'Tenants', icon: Users }, { label: 'Payments', icon: CreditCard }, { label: 'Expenses', icon: Wallet }, { label: 'Maintenance', icon: Wrench }]
 
 export default function Page() {
+  const supabase = useMemo(() => createClient(), [])
+  const [session, setSession] = useState<any>(null)
   const [active, setActive] = useState('Overview')
   const [dark, setDark] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [modal, setModal] = useState<'payment' | 'property' | null>(null)
+  const [modal, setModal] = useState<'property' | 'tenant' | 'payment' | null>(null)
+  const [properties, setProperties] = useState<Property[]>([])
+  const [units, setUnits] = useState<Unit[]>([])
+  const [tenants, setTenants] = useState<Tenant[]>([])
+  const [payments, setPayments] = useState<any[]>([])
   const [notice, setNotice] = useState('')
-  const [search, setSearch] = useState('')
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
+  const [authForm, setAuthForm] = useState({ email: '', password: '', fullName: '', companyName: 'PROPERTY SHELTERS LTD' })
 
-  const visiblePayments = useMemo(() => payments.filter((payment) => payment.name.toLowerCase().includes(search.toLowerCase()) || payment.unit.toLowerCase().includes(search.toLowerCase())), [search])
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data } = supabase.auth.onAuthStateChange((_event, next) => setSession(next))
+    return () => data.subscription.unsubscribe()
+  }, [supabase])
 
-  function showNotice(message: string) {
-    setNotice(message)
-    window.setTimeout(() => setNotice(''), 2800)
+  useEffect(() => { if (session?.user) loadData() }, [session])
+  async function loadData() {
+    const [p, u, t, pay] = await Promise.all([supabase.from('properties').select('*').order('created_at', { ascending: false }), supabase.from('units').select('*'), supabase.from('tenants').select('*'), supabase.from('payments').select('*').order('payment_date', { ascending: false })])
+    setProperties(p.data ?? []); setUnits(u.data ?? []); setTenants(t.data ?? []); setPayments(pay.data ?? [])
   }
+  function flash(message: string) { setNotice(message); window.setTimeout(() => setNotice(''), 2800) }
+  async function authenticate() {
+    const result = authMode === 'login' ? await supabase.auth.signInWithPassword({ email: authForm.email, password: authForm.password }) : await supabase.auth.signUp({ email: authForm.email, password: authForm.password, options: { emailRedirectTo: `${window.location.origin}/auth/callback`, data: { full_name: authForm.fullName, company_name: authForm.companyName } } })
+    if (result.error) flash(result.error.message.includes('Invalid') ? 'Invalid email or password' : result.error.message)
+    else if (authMode === 'signup' && !result.data.session) flash('Check your email to confirm your account')
+  }
+  if (!session) return <AuthScreen mode={authMode} setMode={setAuthMode} form={authForm} setForm={setAuthForm} onSubmit={authenticate} dark={dark} setDark={setDark} notice={notice} />
 
-  return (
-    <div className={dark ? 'app-shell dark-mode' : 'app-shell'}>
-      <aside className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}>
-        <div className="brand"><div className="brand-mark"><Home size={19} strokeWidth={2.5} /></div><span>RentFlow <em>Kenya</em></span><button className="mobile-close" onClick={() => setMobileOpen(false)} aria-label="Close menu"><X size={18} /></button></div>
-        <div className="workspace"><div className="workspace-avatar">PS</div><div><strong>PROPERTY SHELTERS LTD</strong><small>Landlord account</small></div><ChevronDown size={15} /></div>
-        <nav className="nav-list" aria-label="Main navigation">
-          <p className="nav-caption">WORKSPACE</p>
-          {nav.map(({ label, icon: Icon, count }) => <button key={label} className={`nav-item ${active === label ? 'active' : ''}`} onClick={() => { setActive(label); setMobileOpen(false) }}><Icon size={18} /> <span>{label}</span>{count && <b>{count}</b>}</button>)}
-          <p className="nav-caption nav-caption-spaced">ACCOUNT</p>
-          <button className={`nav-item ${active === 'Messages' ? 'active' : ''}`} onClick={() => setActive('Messages')}><MessageSquare size={18} /><span>Messages</span><b className="alert-count">2</b></button>
-          <button className="nav-item" onClick={() => showNotice('Settings are coming soon')}><Settings size={18} /><span>Settings</span></button>
-        </nav>
-        <div className="sidebar-bottom"><div className="secure-note"><ShieldCheck size={17} /><span><strong>Your data is secure</strong><small>Encrypted and protected</small></span></div><div className="profile"><div className="profile-avatar">PS</div><div><strong>PROPERTY SHELTERS LTD</strong><small>james@rentflow.co.ke</small></div><MoreHorizontal size={17} /></div></div>
-      </aside>
-
-      <main className="main-content">
-        <header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)} aria-label="Open menu"><Menu size={20} /></button><div className="breadcrumb"><span>Workspace</span><span>/</span><strong>{active}</strong></div><div className="top-actions"><div className="search-wrap"><Search size={16} /><input aria-label="Search" placeholder="Search anything..." value={search} onChange={(e) => setSearch(e.target.value)} /></div><button className="icon-button" onClick={() => setDark(!dark)} aria-label="Toggle theme">{dark ? <Sun size={18} /> : <Moon size={18} />}</button><button className="icon-button notification" onClick={() => showNotice('You have 2 unread notifications')} aria-label="Notifications"><Bell size={18} /><i /></button><div className="top-avatar">PS</div></div></header>
-
-        <div className="page-content">
-          <div className="welcome-row"><div><p className="eyebrow">SATURDAY, AUGUST 8, 2026</p><h1>Good morning, PROPERTY SHELTERS LTD <span>—</span></h1><p className="subtitle">Here&apos;s what&apos;s happening across your properties today.</p></div><div className="header-actions"><button className="button secondary" onClick={() => setModal('property')}><Plus size={16} /> Add property</button><button className="button primary" onClick={() => setModal('payment')}><CircleDollarSign size={16} /> Record payment</button></div></div>
-          <div className="demo-banner"><Zap size={16} /><span><strong>Demo workspace</strong> — Sample data is shown for preview. Real payments are only recorded after manual confirmation or an official provider callback.</span><button onClick={() => showNotice('M-Pesa integration is ready to connect')}>Learn about M-Pesa <ArrowUpRight size={14} /></button></div>
-
-          {active === 'Overview' ? <>
-            <section className="metrics-grid" aria-label="Portfolio summary">
-              <Metric icon={Building2} label="Total properties" value="3" trend="+1 this year" tone="blue" />
-              <Metric icon={Home} label="Total units" value="48" trend="87.5% occupied" tone="purple" />
-              <Metric icon={CircleDollarSign} label="Collected this month" value="KSh 812,500" trend="+12.8% vs last month" tone="green" />
-              <Metric icon={Wallet} label="Outstanding rent" value="KSh 126,000" trend="3 tenants overdue" tone="orange" danger />
-            </section>
-
-            <section className="dashboard-grid"><div className="card chart-card"><div className="card-heading"><div><h2>Income overview</h2><p>Rent collection performance</p></div><button className="select-button">Last 12 months <ChevronDown size={14} /></button></div><div className="chart-legend"><span><i className="legend-green" />Collected</span><span><i className="legend-muted" />Expected</span></div><div className="bar-chart">{bars.map((height, i) => <div className="bar-column" key={i}><div className="bar-track"><div className="bar-fill" style={{ height: `${height}%` }} /></div><small>{['Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'][i]}</small></div>)}</div><div className="chart-total"><span>Collected this period <strong>KSh 8.42M</strong></span><span className="positive"><ArrowUpRight size={14} /> 18.4%</span></div></div><div className="card occupancy-card"><div className="card-heading"><div><h2>Occupancy</h2><p>Across all properties</p></div><button className="more-button"><MoreHorizontal size={18} /></button></div><div className="donut-wrap"><div className="donut"><div><strong>87.5%</strong><small>occupied</small></div></div></div><div className="occupancy-stats"><div><span className="stat-key"><i className="dot green-dot" />Occupied</span><strong>42 units</strong></div><div><span className="stat-key"><i className="dot blue-dot" />Vacant</span><strong>6 units</strong></div></div><button className="full-link" onClick={() => setActive('Properties')}>View all units <ArrowUpRight size={14} /></button></div></section>
-
-            <section className="bottom-grid"><div className="card payments-card"><div className="card-heading"><div><h2>Recent payments</h2><p>Latest transactions across your portfolio</p></div><button className="text-button" onClick={() => setActive('Payments')}>View all <ArrowUpRight size={14} /></button></div><div className="table-wrap"><table><thead><tr><th>Tenant</th><th>Property / Unit</th><th>Amount</th><th>Method</th><th>Status</th></tr></thead><tbody>{visiblePayments.map((payment) => <tr key={payment.name + payment.unit}><td><div className="tenant-cell"><span className={`initials ${payment.tone}`}>{payment.initials}</span><strong>{payment.name}</strong></div></td><td><span className="muted-cell">{payment.unit}</span></td><td><strong>{formatCurrency(payment.amount)}</strong><small className="date-cell">{payment.date}</small></td><td><span className="method-cell">{payment.method}</span></td><td><Status>{payment.status}</Status></td></tr>)}</tbody></table></div></div><div className="card arrears-card"><div className="card-heading"><div><h2>Outstanding rent</h2><p>Needs your attention</p></div><button className="more-button"><MoreHorizontal size={18} /></button></div><div className="arrears-list">{arrears.map((item) => <div className="arrear-row" key={item.name}><span className="initials red">{item.initials}</span><div className="arrear-info"><strong>{item.name}</strong><small>{item.unit}</small></div><div className="arrear-amount"><strong>{item.due}</strong><small>{item.days}</small></div></div>)}</div><button className="full-link warning-link" onClick={() => setActive('Payments')}>Review arrears <ArrowUpRight size={14} /></button></div></section>
-          </> : <PlaceholderView active={active} onAction={() => setModal('payment')} />}
-        </div>
-        <footer className="footer"><span>© 2026 RentFlow Kenya</span><span>Secure rent management, made simple.</span><span><ShieldCheck size={13} /> Demo workspace</span></footer>
-      </main>
-      <div className="mobile-nav">{nav.slice(0, 4).map(({ label, icon: Icon }) => <button key={label} className={active === label ? 'active' : ''} onClick={() => setActive(label)}><Icon size={19} /><span>{label === 'Overview' ? 'Home' : label}</span></button>)}</div>
-      {notice && <div className="toast"><Check size={16} />{notice}</div>}
-      {modal && <Modal type={modal} close={() => setModal(null)} confirm={() => { setModal(null); showNotice(modal === 'payment' ? 'Payment saved as manually recorded' : 'Property draft created') }} />}
-    </div>
-  )
+  const occupied = units.filter((u) => u.status === 'occupied').length
+  const expected = units.reduce((sum, u) => sum + Number(u.monthly_rent || 0), 0)
+  const collected = payments.reduce((sum, p) => sum + Number(p.amount || 0), 0)
+  return <div className={dark ? 'app-shell dark-mode' : 'app-shell'}>
+    <aside className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}><div className="brand"><div className="brand-mark"><Home size={19} /></div><span>RentFlow <em>Kenya</em></span><button className="mobile-close" onClick={() => setMobileOpen(false)}><X size={18} /></button></div><div className="workspace"><div className="workspace-avatar">PS</div><div><strong>PROPERTY SHELTERS LTD</strong><small>{session.user.email}</small></div></div><nav className="nav-list">{nav.map(({ label, icon: Icon }) => <button key={label} className={`nav-item ${active === label ? 'active' : ''}`} onClick={() => { setActive(label); setMobileOpen(false) }}><Icon size={18} /><span>{label}</span></button>)}</nav><div className="sidebar-bottom"><div className="secure-note"><ShieldCheck size={17} /><span><strong>Your data is secure</strong><small>Protected by Supabase RLS</small></span></div><button className="nav-item" onClick={() => supabase.auth.signOut()}><LogOut size={18} /><span>Sign out</span></button></div></aside>
+    <main className="main-content"><header className="topbar"><button className="menu-button" onClick={() => setMobileOpen(true)}><Menu size={20} /></button><div className="breadcrumb"><span>Workspace</span><span>/</span><strong>{active}</strong></div><div className="top-actions"><div className="search-wrap"><Search size={16} /><input placeholder="Search anything..." /></div><button className="icon-button" onClick={() => setDark(!dark)}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button><div className="top-avatar">PS</div></div></header><div className="page-content"><div className="welcome-row"><div><p className="eyebrow">YOUR PRIVATE WORKSPACE</p><h1>Good morning, PROPERTY SHELTERS LTD <span>—</span></h1><p className="subtitle">Live records from your rental portfolio.</p></div><div className="header-actions"><button className="button secondary" onClick={() => setModal('property')}><Plus size={16} /> Add property</button><button className="button primary" onClick={() => setModal('payment')}><CircleDollarSign size={16} /> Record payment</button></div></div>{active === 'Overview' ? <Overview properties={properties} units={units} tenants={tenants} expected={expected} collected={collected} occupied={occupied} /> : <Workspace active={active} properties={properties} units={units} tenants={tenants} onRefresh={loadData} onAction={() => setModal(active === 'Properties' ? 'property' : active === 'Tenants' ? 'tenant' : 'payment')} />}</div><footer className="footer"><span>© 2026 RentFlow Kenya</span><span>Secure rent management, made simple.</span><span><ShieldCheck size={13} /> Live workspace</span></footer></main><div className="mobile-nav">{nav.slice(0, 4).map(({ label, icon: Icon }) => <button key={label} className={active === label ? 'active' : ''} onClick={() => setActive(label)}><Icon size={19} /><span>{label}</span></button>)}</div>{notice && <div className="toast"><Check size={16} />{notice}</div>}{modal && <Modal type={modal} close={() => setModal(null)} userId={session.user.id} properties={properties} units={units} tenants={tenants} refresh={loadData} flash={flash} />}</div>
 }
 
-function Metric({ icon: Icon, label, value, trend, tone, danger }: { icon: typeof Home; label: string; value: string; trend: string; tone: string; danger?: boolean }) {
-  return <div className="metric-card"><div className={`metric-icon ${tone}`}><Icon size={18} /></div><div className="metric-label">{label}</div><strong className="metric-value">{value}</strong><span className={danger ? 'metric-trend danger-text' : 'metric-trend'}>{danger ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />}{trend}</span></div>
-}
+function AuthScreen({ mode, setMode, form, setForm, onSubmit, dark, setDark, notice }: any) { return <div className={dark ? 'auth-shell dark-mode' : 'auth-shell'}><div className="auth-card"><div className="brand"><div className="brand-mark"><Home size={19} /></div><span>RentFlow <em>Kenya</em></span><button className="icon-button" onClick={() => setDark(!dark)}>{dark ? <Sun size={18} /> : <Moon size={18} />}</button></div><p className="eyebrow">SECURE RENT MANAGEMENT</p><h1>{mode === 'login' ? 'Welcome back' : 'Create your workspace'}</h1><p className="subtitle">{mode === 'login' ? 'Sign in to manage your portfolio.' : 'Start with an empty workspace. Add your real records as you go.'}</p>{mode === 'signup' && <><label>Full name<input value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} /></label><label>Company name<input value={form.companyName} onChange={(e) => setForm({ ...form, companyName: e.target.value })} /></label></>}<label>Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label><label>Password<input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label><button className="button primary auth-submit" onClick={onSubmit}>{mode === 'login' ? 'Sign in' : 'Create account'}</button>{notice && <div className="auth-notice">{notice}</div>}<button className="text-button auth-switch" onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}>{mode === 'login' ? 'Create a landlord account' : 'Already have an account? Sign in'}</button></div></div> }
 
-function PlaceholderView({ active, onAction }: { active: string; onAction: () => void }) {
-  const copy: Record<string, { icon: typeof Home; description: string; action: string }> = { Properties: { icon: Building2, description: 'Manage buildings, units, occupancy, and property documents.', action: 'Add property' }, Tenants: { icon: Users, description: 'Keep tenant information, leases, deposits, and payment history organized.', action: 'Add tenant' }, Payments: { icon: CreditCard, description: 'Record confirmed payments, review arrears, and download receipts.', action: 'Record payment' }, Expenses: { icon: Wallet, description: 'Track repairs, utilities, maintenance, and operating expenses.', action: 'Add expense' }, Maintenance: { icon: Wrench, description: 'Review and update maintenance requests from your tenants.', action: 'View requests' }, Reports: { icon: FileText, description: 'Export income, arrears, expenses, and occupancy reports.', action: 'Create report' }, Messages: { icon: MessageSquare, description: 'Stay in touch with tenants about rent, maintenance, and announcements.', action: 'New message' } }
-  const item = copy[active] ?? copy.Properties; const Icon = item.icon
-  return <div className="placeholder"><div className="placeholder-icon"><Icon size={28} /></div><p className="eyebrow">RENTFLOW WORKSPACE</p><h2>{active}</h2><p>{item.description}</p><div className="placeholder-actions"><button className="button primary" onClick={onAction}><Plus size={16} /> {item.action}</button><button className="button secondary" onClick={() => {}}>Import sample data</button></div><small>This view is ready for your real records. Demo data will never be presented as confirmed financial activity.</small></div>
-}
+function Overview({ properties, units, tenants, expected, collected, occupied }: any) { const money = (n: number) => `KSh ${n.toLocaleString('en-KE')}`; return <><section className="metrics-grid"><Metric icon={Building2} label="Total properties" value={properties.length} /><Metric icon={Home} label="Total units" value={units.length} /><Metric icon={CircleDollarSign} label="Collected this month" value={money(collected)} /><Metric icon={Wallet} label="Expected monthly rent" value={money(expected)} /></section><section className="dashboard-grid"><div className="card chart-card"><div className="card-heading"><div><h2>Portfolio overview</h2><p>Calculated from your live records</p></div></div><div className="empty-chart"><Building2 size={28} /><strong>{properties.length ? `${properties.length} ${properties.length === 1 ? 'property' : 'properties'} connected` : 'No properties yet'}</strong><span>{properties.length ? `${units.length} units · ${occupied} occupied · ${tenants.length} tenants` : 'Add your first property to start managing rent.'}</span></div></div><div className="card occupancy-card"><div className="card-heading"><div><h2>Occupancy</h2><p>Across all properties</p></div></div><div className="donut-wrap"><div className="donut"><div><strong>{units.length ? Math.round((occupied / units.length) * 100) : 0}%</strong><small>occupied</small></div></div></div><div className="occupancy-stats"><div><span>Occupied</span><strong>{occupied} units</strong></div><div><span>Vacant</span><strong>{units.length - occupied} units</strong></div></div></div></section><section className="card payments-card"><div className="card-heading"><div><h2>Recent payments</h2><p>Manual records only; no fake provider confirmations.</p></div></div>{paymentsEmpty()}</section></> }
+function paymentsEmpty() { return <div className="empty-state"><CreditCard size={26} /><strong>No payments yet</strong><span>Record a verified manual payment to create a receipt.</span></div> }
+function Metric({ icon: Icon, label, value }: any) { return <div className="metric-card"><div className="metric-icon blue"><Icon size={18} /></div><div className="metric-label">{label}</div><strong className="metric-value">{value}</strong><span className="metric-trend">Live database value</span></div> }
+function Workspace({ active, properties, units, tenants, onAction }: any) { const empty = active === 'Properties' ? !properties.length : active === 'Tenants' ? !tenants.length : active === 'Payments' ? true : false; return <div className="placeholder"><div className="placeholder-icon">{active === 'Properties' ? <Building2 size={28} /> : active === 'Tenants' ? <Users size={28} /> : <CreditCard size={28} />}</div><p className="eyebrow">LIVE WORKSPACE</p><h2>{active}</h2>{empty ? <><p>{active === 'Properties' ? 'Add your first property to start managing your rental portfolio.' : active === 'Tenants' ? 'Add a tenant to start tracking rent.' : 'Record a verified payment to create a receipt and update balances.'}</p><button className="button primary" onClick={onAction}><Plus size={16} /> {active === 'Properties' ? 'Add property' : active === 'Tenants' ? 'Add tenant' : 'Record payment'}</button></> : <p>{properties.length} properties, {units.length} units, and {tenants.length} tenants are connected to this workspace.</p>}<small>All records are persisted in Supabase and scoped to your landlord account.</small></div> }
 
-function Modal({ type, close, confirm }: { type: 'payment' | 'property'; close: () => void; confirm: () => void }) {
-  return <div className="modal-backdrop" role="dialog" aria-modal="true"><div className="modal"><div className="modal-head"><div><p className="eyebrow">{type === 'payment' ? 'MANUAL RECORD' : 'PROPERTY SETUP'}</p><h2>{type === 'payment' ? 'Record a payment' : 'Add a property'}</h2></div><button className="more-button" onClick={close} aria-label="Close"><X size={18} /></button></div>{type === 'payment' ? <><label>Tenant<select><option>Jane Doe · Sunrise 103</option><option>John Doe · Sunrise 101</option></select></label><label>Amount paid<div className="input-prefix"><span>KSh</span><input defaultValue="14000" /></div></label><div className="form-row"><label>Payment method<select><option>M-Pesa (manual)</option><option>Bank transfer</option><option>Cash</option></select></label><label>Reference ID<input placeholder="e.g. QWE12345" /></label></div><div className="modal-note"><ShieldCheck size={16} /><span>Only record payments you have verified. M-Pesa is integration-ready, but this form does not claim provider confirmation.</span></div></> : <><label>Property name<input placeholder="e.g. Sunrise Apartments" /></label><div className="form-row"><label>Location<input placeholder="Kasarani, Nairobi" /></label><label>Property type<select><option>Apartment building</option><option>Rooms / bedsitters</option><option>Commercial</option></select></label></div><label>Address<input placeholder="Street address" /></label><label>Description<textarea placeholder="A short description of the property" rows={3} /></label></>}<div className="modal-actions"><button className="button secondary" onClick={close}>Cancel</button><button className="button primary" onClick={confirm}><Check size={16} /> {type === 'payment' ? 'Save payment' : 'Create property'}</button></div></div></div>
-}
+function Modal({ type, close, userId, properties, units, tenants, refresh, flash }: any) { const supabase = createClient(); const [form, setForm] = useState<any>({ propertyType: 'Apartment building', units: '1', unitType: 'Standard', paymentMethod: 'M-Pesa', date: new Date().toISOString().slice(0, 10) }); const set = (key: string, value: any) => setForm({ ...form, [key]: value }); async function save() { if (type === 'property') { const { data, error } = await supabase.from('properties').insert({ owner_id: userId, name: form.name, property_type: form.propertyType, location: form.location, address: form.address, description: form.description }).select().single(); if (!error && data) { const count = Math.max(0, Number(form.units || 0)); if (count) await supabase.from('units').insert(Array.from({ length: count }, (_, i) => ({ owner_id: userId, property_id: data.id, unit_number: String(i + 1).padStart(2, '0'), unit_type: form.unitType || 'Standard', monthly_rent: Number(form.rent || 0) }))); flash('Property and units saved'); await refresh(); close(); return } flash(error?.message || 'Could not save property'); } else if (type === 'tenant') { const { error } = await supabase.from('tenants').insert({ owner_id: userId, full_name: form.name, phone: form.phone, email: form.email }); if (error) flash(error.message); else { flash('Tenant saved'); await refresh(); close() } } else { const { data, error } = await supabase.rpc('record_manual_payment', { p_tenant_id: form.tenant, p_property_id: form.property, p_unit_id: form.unit, p_amount: Number(form.amount), p_payment_date: form.date, p_payment_method: form.paymentMethod, p_reference: form.reference, p_notes: form.notes || '' }); if (error) flash(error.message); else { flash(`Payment recorded; receipt ${data?.receipt?.receipt_number ?? ''}`); await refresh(); close() } } } return <div className="modal-backdrop"><div className="modal"><div className="modal-head"><div><p className="eyebrow">{type === 'property' ? 'PROPERTY SETUP' : type === 'tenant' ? 'TENANT PROFILE' : 'MANUAL RECORD'}</p><h2>{type === 'property' ? 'Add a property' : type === 'tenant' ? 'Add a tenant' : 'Record a payment'}</h2></div><button className="more-button" onClick={close}><X size={18} /></button></div>{type === 'property' && <><label>Property name<input value={form.name || ''} onChange={(e) => set('name', e.target.value)} /></label><div className="form-row"><label>Location<input value={form.location || ''} onChange={(e) => set('location', e.target.value)} /></label><label>Property type<select value={form.propertyType} onChange={(e) => set('propertyType', e.target.value)}><option>Apartment building</option><option>Rooms / bedsitters</option><option>Commercial</option></select></label></div><label>Address<input value={form.address || ''} onChange={(e) => set('address', e.target.value)} /></label><div className="form-row"><label>Number of units<input type="number" min="0" value={form.units} onChange={(e) => set('units', e.target.value)} /></label><label>Monthly rent<input type="number" min="0" value={form.rent || ''} onChange={(e) => set('rent', e.target.value)} /></label></div><label>Description<textarea value={form.description || ''} onChange={(e) => set('description', e.target.value)} rows={3} /></label></>}{type === 'tenant' && <><label>Full name<input value={form.name || ''} onChange={(e) => set('name', e.target.value)} /></label><label>Phone<input value={form.phone || ''} onChange={(e) => set('phone', e.target.value)} /></label><label>Email<input type="email" value={form.email || ''} onChange={(e) => set('email', e.target.value)} /></label></>}{type === 'payment' && <><label>Tenant<select value={form.tenant || ''} onChange={(e) => set('tenant', e.target.value)}><option value="">Select tenant</option>{tenants.map((t: any) => <option key={t.id} value={t.id}>{t.full_name}</option>)}</select></label><label>Property<select value={form.property || ''} onChange={(e) => set('property', e.target.value)}><option value="">Select property</option>{properties.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label><label>Unit<select value={form.unit || ''} onChange={(e) => set('unit', e.target.value)}><option value="">Select unit</option>{units.map((u: any) => <option key={u.id} value={u.id}>{u.unit_number}</option>)}</select></label><div className="form-row"><label>Amount<input type="number" min="1" value={form.amount || ''} onChange={(e) => set('amount', e.target.value)} /></label><label>Payment date<input type="date" value={form.date} onChange={(e) => set('date', e.target.value)} /></label></div><div className="form-row"><label>Method<select value={form.paymentMethod} onChange={(e) => set('paymentMethod', e.target.value)}><option>M-Pesa</option><option>Bank transfer</option><option>Cash</option><option>Other</option></select></label><label>Reference<input value={form.reference || ''} onChange={(e) => set('reference', e.target.value)} /></label></div><label>Notes<textarea value={form.notes || ''} onChange={(e) => set('notes', e.target.value)} rows={2} /></label><div className="modal-note"><ShieldCheck size={16} /><span>Manual record only. This does not claim M-Pesa provider confirmation.</span></div></>}<div className="modal-actions"><button className="button secondary" onClick={close}>Cancel</button><button className="button primary" onClick={save}><Check size={16} /> Save</button></div></div></div> }
