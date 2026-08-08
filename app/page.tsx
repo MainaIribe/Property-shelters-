@@ -1,5 +1,7 @@
 'use client'
 
+export const dynamic = 'force-dynamic'
+
 import { useEffect, useMemo, useState } from 'react'
 import { Building2, Check, CircleDollarSign, CreditCard, Home, LayoutDashboard, LogOut, Menu, Moon, Plus, Search, ShieldCheck, Sun, Users, Wallet, Wrench, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
